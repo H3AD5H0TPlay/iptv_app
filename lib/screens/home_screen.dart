@@ -1,10 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:iptv_app/models/mock_channels.dart';
+import 'package:iptv_app/models/channel_model.dart';
+import 'package:iptv_app/screens/player_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    // Get unique categories from mock data
+    final categories = mockChannels.map((c) => c.category).toSet().toList();
+
     return Scaffold(
       body: SingleChildScrollView(
         child: Column(
@@ -17,7 +23,7 @@ class HomeScreen extends StatelessWidget {
               decoration: const BoxDecoration(
                 image: DecorationImage(
                   image: NetworkImage(
-                    'https://images.unsplash.com/photo-1542204113-e9351579a44b?q=80&w=2000&auto=format&fit=crop',
+                    'https://images.unsplash.com/photo-1536440136628-849c177e76a1?q=80&w=2000&auto=format&fit=crop',
                   ),
                   fit: BoxFit.cover,
                 ),
@@ -59,11 +65,8 @@ class HomeScreen extends StatelessWidget {
             ),
             const SizedBox(height: 20),
             
-            // Categories
-            _buildCategoryRow('Trending Now'),
-            _buildCategoryRow('Live News'),
-            _buildCategoryRow('Movies'),
-            _buildCategoryRow('Sports'),
+            // Dynamically build categories from mock data
+            ...categories.map((category) => _buildCategoryRow(category)).toList(),
             const SizedBox(height: 20),
           ],
         ),
@@ -71,14 +74,19 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildCategoryRow(String title) {
+  Widget _buildCategoryRow(String categoryName) {
+    // Filter channels for this specific category
+    final categoryChannels = mockChannels
+        .where((channel) => channel.category == categoryName)
+        .toList();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
           child: Text(
-            title,
+            categoryName,
             style: const TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
@@ -87,59 +95,68 @@ class HomeScreen extends StatelessWidget {
           ),
         ),
         SizedBox(
-          height: 180, // Increased height to accommodate text below
+          height: 180,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 12.0),
-            itemCount: 10,
+            itemCount: categoryChannels.length,
             itemBuilder: (context, index) {
-              return Container(
-                width: 120,
-                margin: const EdgeInsets.symmetric(horizontal: 4.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Channel Card Image
-                    Expanded(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Colors.grey[900],
-                          borderRadius: BorderRadius.circular(8),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.3),
-                              blurRadius: 4,
-                              offset: const Offset(0, 2),
+              final channel = categoryChannels[index];
+              return InkWell(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => PlayerScreen(channel: channel),
+                    ),
+                  );
+                },
+                child: Container(
+                  width: 120,
+                  margin: const EdgeInsets.symmetric(horizontal: 4.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.grey[900],
+                            borderRadius: BorderRadius.circular(8),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.3),
+                                blurRadius: 4,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.network(
+                              channel.logoUrl,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) =>
+                                  const Center(
+                                      child: Icon(Icons.tv,
+                                          color: Colors.white54, size: 40)),
                             ),
-                          ],
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: Image.network(
-                            'https://picsum.photos/seed/${title}_$index/200/300',
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) =>
-                                const Center(
-                                    child: Icon(Icons.tv,
-                                        color: Colors.white54, size: 40)),
                           ),
                         ),
                       ),
-                    ),
-                    // Channel Name Text Below Image
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8.0, left: 4.0),
-                      child: Text(
-                        'Channel ${index + 1}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8.0, left: 4.0),
+                        child: Text(
+                          channel.name,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               );
             },
