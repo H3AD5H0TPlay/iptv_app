@@ -1,5 +1,13 @@
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:iptv_app/models/channel_model.dart';
+
+class _ParseParams {
+  final String body;
+  final int startId;
+  _ParseParams(this.body, this.startId);
+}
 
 class ChannelService {
   static const List<String> m3uUrls = [
@@ -9,7 +17,6 @@ class ChannelService {
 
   Future<List<Channel>> fetchChannels() async {
     try {
-      // Fetch multiple regions in parallel
       final responses = await Future.wait(
         m3uUrls.map((url) => http.get(Uri.parse(url))),
       );
@@ -18,7 +25,14 @@ class ChannelService {
       
       for (var response in responses) {
         if (response.statusCode == 200) {
-          allChannels.addAll(_parseM3u(response.body, allChannels.length));
+          // FIX: Use utf8.decode on bodyBytes to handle Japanese/Korean characters correctly
+          final String decodedBody = utf8.decode(response.bodyBytes, allowMalformed: true);
+          
+          final List<Channel> parsed = await compute(
+            _parseM3uIsolate, 
+            _ParseParams(decodedBody, allChannels.length)
+          );
+          allChannels.addAll(parsed);
         }
       }
 
@@ -32,51 +46,55 @@ class ChannelService {
     }
   }
 
-  List<Channel> _parseM3u(String body, int startId) {
+  static List<Channel> _parseM3uIsolate(_ParseParams params) {
     final List<Channel> channels = [];
-    final List<String> lines = body.split('\n');
+    final List<String> lines = const LineSplitter().convert(params.body);
 
-    if (lines.isEmpty || !lines[0].contains('#EXTM3U')) {
-      return [];
-    }
+    String? lastInfLine;
+    String? currentCategory;
 
-    for (int i = 0; i < lines.length; i++) {
-      String line = lines[i].trim();
+    for (var line in lines) {
+      line = line.trim();
+      if (line.isEmpty) continue;
 
       if (line.startsWith('#EXTINF')) {
-        // Extract Logo URL
-        final logoMatch = RegExp(r'tvg-logo="([^"]*)"').firstMatch(line);
-        final String logoUrl = logoMatch?.group(1) ?? '';
-
-        // Extract Category/Group
-        final groupMatch = RegExp(r'group-title="([^"]*)"').firstMatch(line);
-        final String category = groupMatch?.group(1) ?? 'General';
-
-        // Extract Channel Name (after the last comma)
-        final String name = line.split(',').last.trim();
-
-        // The stream URL is usually on the next non-empty line
-        String streamUrl = '';
-        for (int j = i + 1; j < lines.length; j++) {
-          final String nextLine = lines[j].trim();
-          if (nextLine.isNotEmpty && !nextLine.startsWith('#')) {
-            streamUrl = nextLine;
-            break;
-          }
+        lastInfLine = line;
+      } else if (line.startsWith('#EXTGRP:')) {
+        currentCategory = line.substring(8).trim();
+      } else if (line.startsWith('http') && lastInfLine != null) {
+        // We found a URL and we have a preceding INF line
+        final String streamUrl = line;
+        
+        // Extract Logo
+        final logoMatch = RegExp(r'tvg-logo="([^"]*)"', caseSensitive: false).firstMatch(lastInfLine);
+        String logoUrl = logoMatch?.group(1) ?? '';
+        
+        // Defensive check: Native Android decoder fails on SVG or empty/malformed URLs
+        if (logoUrl.toLowerCase().endsWith('.svg') || !logoUrl.startsWith('http')) {
+          logoUrl = '';
         }
 
-        if (streamUrl.isNotEmpty) {
-          channels.add(Channel(
-            id: 'id_${startId + channels.length}',
-            name: name,
-            category: category,
-            logoUrl: logoUrl,
-            streamUrl: streamUrl,
-          ));
-        }
+        // Extract Category
+        final groupMatch = RegExp(r'group-title="([^"]*)"', caseSensitive: false).firstMatch(lastInfLine);
+        String category = groupMatch?.group(1) ?? currentCategory ?? 'General';
+        if (category.isEmpty) category = 'General';
+
+        // Extract Name
+        final String name = lastInfLine.split(',').last.trim();
+
+        channels.add(Channel(
+          id: 'id_${params.startId + channels.length}',
+          name: name,
+          category: category,
+          logoUrl: logoUrl,
+          streamUrl: streamUrl,
+        ));
+
+        // Reset for next entry
+        lastInfLine = null;
+        // Note: currentCategory stays until updated by another #EXTGRP
       }
     }
-
     return channels;
   }
 }

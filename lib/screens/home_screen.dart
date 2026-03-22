@@ -14,7 +14,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final ChannelService _channelService = ChannelService();
   final FavoritesService _favoritesService = FavoritesService();
-  
+
   late Future<List<Channel>> _channelsFuture;
   List<String> _favoriteNames = [];
   String _searchQuery = '';
@@ -51,9 +51,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: _searchQuery == '' && _searchController.text == '' 
-          ? const Text('StreamEast') 
-          : null,
+        title: _searchQuery.isEmpty ? const Text('StreamEast') : null,
         backgroundColor: Colors.black,
         centerTitle: true,
         bottom: PreferredSize(
@@ -116,10 +114,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   const Icon(Icons.error_outline, color: Colors.red, size: 60),
                   const SizedBox(height: 20),
-                  Text(
+                  const Text(
                     'Failed to load channels.\nCheck your WiFi.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.white.withOpacity(0.7)),
+                    style: TextStyle(color: Colors.white),
                   ),
                   const SizedBox(height: 20),
                   ElevatedButton(
@@ -138,21 +136,25 @@ class _HomeScreenState extends State<HomeScreen> {
           }
 
           final allChannels = snapshot.data!;
-          
-          // Filter channels based on search query
-          final filteredChannels = allChannels.where((c) {
-            return c.name.toLowerCase().contains(_searchQuery) ||
-                   c.category.toLowerCase().contains(_searchQuery);
-          }).toList();
+
+          // Filter and group channels efficiently
+          final filteredChannels = _searchQuery.isEmpty
+              ? allChannels
+              : allChannels.where((c) =>
+                  c.name.toLowerCase().contains(_searchQuery) ||
+                  c.category.toLowerCase().contains(_searchQuery)).toList();
 
           if (filteredChannels.isEmpty) {
-            return const Center(
-              child: Text('No channels match your search.'),
-            );
+            return const Center(child: Text('No channels match your search.'));
           }
 
-          final categories = filteredChannels.map((c) => c.category).toSet().toList();
-          
+          // Pre-group channels by category to avoid repeated filtering in the list
+          final Map<String, List<Channel>> grouped = {};
+          for (var channel in filteredChannels) {
+            grouped.putIfAbsent(channel.category, () => []).add(channel);
+          }
+          final sortedCategories = grouped.keys.toList()..sort();
+
           final favoriteChannels = filteredChannels
               .where((c) => _favoriteNames.contains(c.name))
               .toList();
@@ -164,71 +166,29 @@ class _HomeScreenState extends State<HomeScreen> {
               });
               await _loadFavorites();
             },
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Show Hero Banner only when not searching
-                  if (_searchQuery.isEmpty)
-                    Container(
-                      height: 300,
-                      width: double.infinity,
-                      decoration: const BoxDecoration(
-                        image: DecorationImage(
-                          image: NetworkImage(
-                            'https://images.unsplash.com/photo-1536440136628-849c177e76a1?q=80&w=2000&auto=format&fit=crop',
-                          ),
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.bottomCenter,
-                            end: Alignment.topCenter,
-                            colors: [
-                              Colors.black.withOpacity(0.8),
-                              Colors.transparent,
-                            ],
-                          ),
-                        ),
-                        padding: const EdgeInsets.all(20),
-                        child: const Column(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Featured Content',
-                              style: TextStyle(
-                                fontSize: 28,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            ),
-                            Text(
-                              'Watch the latest live streams now',
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Colors.white70,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  
-                  if (favoriteChannels.isNotEmpty)
-                    _buildCategoryRow('Your Favorites', favoriteChannels),
+            child: ListView.builder(
+              padding: const EdgeInsets.only(bottom: 20),
+              // +1 for Banner, +1 if favorites exist
+              itemCount: sortedCategories.length + (_searchQuery.isEmpty ? 1 : 0) + (favoriteChannels.isNotEmpty ? 1 : 0),
+              itemBuilder: (context, index) {
+                int adjustedIndex = index;
 
-                  ...categories
-                      .map((category) => _buildCategoryRow(
-                          category, 
-                          filteredChannels.where((c) => c.category == category).toList()
-                        ))
-                      .toList(),
-                  const SizedBox(height: 20),
-                ],
-              ),
+                // 1. Hero Banner
+                if (_searchQuery.isEmpty) {
+                  if (adjustedIndex == 0) return const _HeroBanner();
+                  adjustedIndex--;
+                }
+
+                // 2. Favorites
+                if (favoriteChannels.isNotEmpty) {
+                  if (adjustedIndex == 0) return _buildCategoryRow('Your Favorites', favoriteChannels);
+                  adjustedIndex--;
+                }
+
+                // 3. Category Rows
+                final category = sortedCategories[adjustedIndex];
+                return _buildCategoryRow(category, grouped[category]!);
+              },
             ),
           );
         },
@@ -238,6 +198,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildCategoryRow(String categoryName, List<Channel> channels) {
     return Column(
+      key: PageStorageKey(categoryName),
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
@@ -283,13 +244,6 @@ class _HomeScreenState extends State<HomeScreen> {
                               decoration: BoxDecoration(
                                 color: Colors.grey[900],
                                 borderRadius: BorderRadius.circular(8),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.3),
-                                    blurRadius: 4,
-                                    offset: const Offset(0, 2),
-                                  ),
-                                ],
                               ),
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(8),
@@ -297,9 +251,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   channel.logoUrl,
                                   fit: BoxFit.cover,
                                   errorBuilder: (context, error, stackTrace) =>
-                                      const Center(
-                                          child: Icon(Icons.tv,
-                                              color: Colors.white54, size: 40)),
+                                      const Center(child: Icon(Icons.tv, color: Colors.white54, size: 40)),
                                 ),
                               ),
                             ),
@@ -329,10 +281,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         padding: const EdgeInsets.only(top: 8.0, left: 4.0),
                         child: Text(
                           channel.name,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                          ),
+                          style: const TextStyle(color: Colors.white, fontSize: 14),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -346,6 +295,41 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         const SizedBox(height: 16),
       ],
+    );
+  }
+}
+
+class _HeroBanner extends StatelessWidget {
+  const _HeroBanner();
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 300,
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: const BoxDecoration(
+        image: DecorationImage(
+          image: NetworkImage('https://images.unsplash.com/photo-1536440136628-849c177e76a1?q=80&w=2000&auto=format&fit=crop'),
+          fit: BoxFit.cover,
+        ),
+      ),
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.bottomCenter,
+            end: Alignment.topCenter,
+            colors: [Colors.black.withOpacity(0.8), Colors.transparent],
+          ),
+        ),
+        padding: const EdgeInsets.all(20),
+        child: const Column(
+          mainAxisAlignment: MainAxisAlignment.end,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Featured Content', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white)),
+            Text('Watch the latest live streams now', style: TextStyle(fontSize: 16, color: Colors.white70)),
+          ],
+        ),
+      ),
     );
   }
 }
