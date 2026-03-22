@@ -2,24 +2,37 @@ import 'package:http/http.dart' as http;
 import 'package:iptv_app/models/channel_model.dart';
 
 class ChannelService {
-  // A public M3U URL from iptv-org (Japanese channels as an example)
-  static const String m3uUrl = 'https://iptv-org.github.io/iptv/countries/jp.m3u';
+  static const List<String> m3uUrls = [
+    'https://iptv-org.github.io/iptv/countries/jp.m3u',
+    'https://iptv-org.github.io/iptv/countries/kr.m3u',
+  ];
 
   Future<List<Channel>> fetchChannels() async {
     try {
-      final response = await http.get(Uri.parse(m3uUrl));
+      // Fetch multiple regions in parallel
+      final responses = await Future.wait(
+        m3uUrls.map((url) => http.get(Uri.parse(url))),
+      );
 
-      if (response.statusCode == 200) {
-        return _parseM3u(response.body);
-      } else {
-        throw Exception('Failed to load M3U file: Status ${response.statusCode}');
+      final List<Channel> allChannels = [];
+      
+      for (var response in responses) {
+        if (response.statusCode == 200) {
+          allChannels.addAll(_parseM3u(response.body, allChannels.length));
+        }
       }
+
+      if (allChannels.isEmpty && responses.any((r) => r.statusCode != 200)) {
+         throw Exception('Failed to load M3U files');
+      }
+
+      return allChannels;
     } catch (e) {
       throw Exception('Error fetching channels: $e');
     }
   }
 
-  List<Channel> _parseM3u(String body) {
+  List<Channel> _parseM3u(String body, int startId) {
     final List<Channel> channels = [];
     final List<String> lines = body.split('\n');
 
@@ -54,7 +67,7 @@ class ChannelService {
 
         if (streamUrl.isNotEmpty) {
           channels.add(Channel(
-            id: 'id_${channels.length}', // Generate a unique ID
+            id: 'id_${startId + channels.length}',
             name: name,
             category: category,
             logoUrl: logoUrl,

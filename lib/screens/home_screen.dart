@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:iptv_app/models/channel_model.dart';
 import 'package:iptv_app/screens/player_screen.dart';
 import 'package:iptv_app/services/channel_service.dart';
+import 'package:iptv_app/services/favorites_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -12,12 +13,30 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final ChannelService _channelService = ChannelService();
+  final FavoritesService _favoritesService = FavoritesService();
+  
   late Future<List<Channel>> _channelsFuture;
+  List<String> _favoriteNames = [];
 
   @override
   void initState() {
     super.initState();
     _channelsFuture = _channelService.fetchChannels();
+    _loadFavorites();
+  }
+
+  Future<void> _loadFavorites() async {
+    final favorites = await _favoritesService.getFavorites();
+    if (mounted) {
+      setState(() {
+        _favoriteNames = favorites;
+      });
+    }
+  }
+
+  Future<void> _toggleFavorite(String name) async {
+    await _favoritesService.toggleFavorite(name);
+    await _loadFavorites();
   }
 
   @override
@@ -65,68 +84,84 @@ class _HomeScreenState extends State<HomeScreen> {
             return const Center(child: Text('No channels found.'));
           }
 
-          final channels = snapshot.data!;
-          final categories = channels.map((c) => c.category).toSet().toList();
+          final allChannels = snapshot.data!;
+          final categories = allChannels.map((c) => c.category).toSet().toList();
+          
+          final favoriteChannels = allChannels
+              .where((c) => _favoriteNames.contains(c.name))
+              .toList();
 
-          return SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Hero Banner
-                Container(
-                  height: 300,
-                  width: double.infinity,
-                  decoration: const BoxDecoration(
-                    image: DecorationImage(
-                      image: NetworkImage(
-                        'https://images.unsplash.com/photo-1536440136628-849c177e76a1?q=80&w=2000&auto=format&fit=crop',
+          return RefreshIndicator(
+            onRefresh: () async {
+              setState(() {
+                _channelsFuture = _channelService.fetchChannels();
+              });
+              await _loadFavorites();
+            },
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Hero Banner
+                  Container(
+                    height: 300,
+                    width: double.infinity,
+                    decoration: const BoxDecoration(
+                      image: DecorationImage(
+                        image: NetworkImage(
+                          'https://images.unsplash.com/photo-1536440136628-849c177e76a1?q=80&w=2000&auto=format&fit=crop',
+                        ),
+                        fit: BoxFit.cover,
                       ),
-                      fit: BoxFit.cover,
                     ),
-                  ),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.bottomCenter,
-                        end: Alignment.topCenter,
-                        colors: [
-                          Colors.black.withOpacity(0.8),
-                          Colors.transparent,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.bottomCenter,
+                          end: Alignment.topCenter,
+                          colors: [
+                            Colors.black.withOpacity(0.8),
+                            Colors.transparent,
+                          ],
+                        ),
+                      ),
+                      padding: const EdgeInsets.all(20),
+                      child: const Column(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Featured Content',
+                            style: TextStyle(
+                              fontSize: 28,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                          Text(
+                            'Watch the latest live streams now',
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: Colors.white70,
+                            ),
+                          ),
                         ],
                       ),
                     ),
-                    padding: const EdgeInsets.all(20),
-                    child: const Column(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Featured Content',
-                          style: TextStyle(
-                            fontSize: 28,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                        Text(
-                          'Watch the latest live streams now',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Colors.white70,
-                          ),
-                        ),
-                      ],
-                    ),
                   ),
-                ),
-                const SizedBox(height: 20),
+                  
+                  if (favoriteChannels.isNotEmpty)
+                    _buildCategoryRow('Your Favorites', favoriteChannels),
 
-                // Dynamically build categories from real M3U data
-                ...categories
-                    .map((category) => _buildCategoryRow(category, channels))
-                    .toList(),
-                const SizedBox(height: 20),
-              ],
+                  ...categories
+                      .map((category) => _buildCategoryRow(
+                          category, 
+                          allChannels.where((c) => c.category == category).toList()
+                        ))
+                      .toList(),
+                  const SizedBox(height: 20),
+                ],
+              ),
             ),
           );
         },
@@ -134,11 +169,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildCategoryRow(String categoryName, List<Channel> allChannels) {
-    final categoryChannels = allChannels
-        .where((channel) => channel.category == categoryName)
-        .toList();
-
+  Widget _buildCategoryRow(String categoryName, List<Channel> channels) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -158,9 +189,11 @@ class _HomeScreenState extends State<HomeScreen> {
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 12.0),
-            itemCount: categoryChannels.length,
+            itemCount: channels.length,
             itemBuilder: (context, index) {
-              final channel = categoryChannels[index];
+              final channel = channels[index];
+              final isFav = _favoriteNames.contains(channel.name);
+
               return InkWell(
                 onTap: () {
                   Navigator.push(
@@ -177,29 +210,52 @@ class _HomeScreenState extends State<HomeScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: Colors.grey[900],
-                            borderRadius: BorderRadius.circular(8),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.3),
-                                blurRadius: 4,
-                                offset: const Offset(0, 2),
+                        child: Stack(
+                          children: [
+                            Container(
+                              decoration: BoxDecoration(
+                                color: Colors.grey[900],
+                                borderRadius: BorderRadius.circular(8),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.3),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: Image.network(
-                              channel.logoUrl,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) =>
-                                  const Center(
-                                      child: Icon(Icons.tv,
-                                          color: Colors.white54, size: 40)),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image.network(
+                                  channel.logoUrl,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) =>
+                                      const Center(
+                                          child: Icon(Icons.tv,
+                                              color: Colors.white54, size: 40)),
+                                ),
+                              ),
                             ),
-                          ),
+                            Positioned(
+                              top: 4,
+                              right: 4,
+                              child: GestureDetector(
+                                onTap: () => _toggleFavorite(channel.name),
+                                child: Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withOpacity(0.5),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(
+                                    isFav ? Icons.favorite : Icons.favorite_border,
+                                    color: isFav ? Colors.red : Colors.white,
+                                    size: 18,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                       Padding(
