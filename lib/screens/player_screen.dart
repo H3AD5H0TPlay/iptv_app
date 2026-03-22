@@ -18,7 +18,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
   late final Player player;
   late final VideoController controller;
   bool hasError = false;
+  bool isBuffering = true;
   late final StreamSubscription errorSubscription;
+  late final StreamSubscription bufferingSubscription;
 
   @override
   void initState() {
@@ -26,24 +28,41 @@ class _PlayerScreenState extends State<PlayerScreen> {
     player = Player();
     controller = VideoController(player);
 
-    // Set up error listener
+    // 1. Listen for Errors
     errorSubscription = player.stream.error.listen((event) {
-      debugPrint('Player error: $event');
       if (mounted) {
         setState(() {
           hasError = true;
+          isBuffering = false;
         });
       }
     });
 
-    player.open(Media(widget.channel.streamUrl));
+    // 2. Listen for Buffering State to show/hide loading spinner
+    bufferingSubscription = player.stream.buffering.listen((buffering) {
+      if (mounted) {
+        setState(() {
+          isBuffering = buffering;
+        });
+      }
+    });
+
+    // 3. Open Stream with custom headers to bypass security/spoof browser
+    player.open(
+      Media(
+        widget.channel.streamUrl,
+        http_headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+          'Referer': 'https://www.google.com/',
+        },
+      ),
+    );
   }
 
   @override
   void dispose() {
-    // Cancel the error subscription
     errorSubscription.cancel();
-    // Reset system UI when leaving the player
+    bufferingSubscription.cancel();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
@@ -61,7 +80,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
       builder: (context, orientation) {
         final isLandscape = orientation == Orientation.landscape;
 
-        // Manage System UI based on orientation
         if (isLandscape) {
           SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
         } else {
@@ -70,7 +88,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
         return Scaffold(
           extendBodyBehindAppBar: true,
-          // Hide AppBar in landscape unless there's an error
           appBar: (isLandscape && !hasError)
               ? null
               : AppBar(
@@ -82,8 +99,47 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
           backgroundColor: Colors.black,
-          body: hasError
-              ? Center(
+          body: Stack(
+            children: [
+              // The Video Layer
+              if (!hasError)
+                Positioned.fill(
+                  child: isLandscape
+                      ? Padding(
+                          padding: const EdgeInsets.only(bottom: 50),
+                          child: Video(
+                            controller: controller,
+                            fit: BoxFit.cover,
+                          ),
+                        )
+                      : Center(
+                          child: Padding(
+                            padding: const EdgeInsets.only(bottom: 40),
+                            child: AspectRatio(
+                              aspectRatio: 16 / 9,
+                              child: Video(controller: controller),
+                            ),
+                          ),
+                        ),
+                ),
+
+              // The Loading/Buffering Spinner
+              if (isBuffering && !hasError)
+                const Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircularProgressIndicator(color: Colors.white),
+                      SizedBox(height: 20),
+                      Text('Connecting to stream...',
+                          style: TextStyle(color: Colors.white)),
+                    ],
+                  ),
+                ),
+
+              // The Error Screen
+              if (hasError)
+                Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -102,6 +158,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         'Unable to load ${widget.channel.name}',
                         style: const TextStyle(color: Colors.white70),
                       ),
+                      const SizedBox(height: 10),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 40),
+                        child: Text(
+                          'This may be due to geo-blocking or a temporary server outage.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.white54, fontSize: 12),
+                        ),
+                      ),
                       const SizedBox(height: 30),
                       ElevatedButton(
                         onPressed: () => Navigator.of(context).pop(),
@@ -113,36 +178,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
                     ],
                   ),
-                )
-              : isLandscape
-                  ? Padding(
-                      padding: const EdgeInsets.only(
-                          bottom: 50), // Lift the controls significantly
-                      child: Video(
-                        controller: controller,
-                        width: MediaQuery.of(context).size.width,
-                        height: MediaQuery.of(context).size.height,
-                        fit: BoxFit.cover, // Fill the entire screen
-                      ),
-                    )
-                  : Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.only(
-                                bottom:
-                                    40), // Lift the controls up from the bottom of the video area
-                            child: AspectRatio(
-                              aspectRatio: 16 / 9,
-                              child: Video(
-                                controller: controller,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                ),
+            ],
+          ),
         );
       },
     );
