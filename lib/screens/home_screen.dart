@@ -1,82 +1,141 @@
 import 'package:flutter/material.dart';
-import 'package:iptv_app/models/mock_channels.dart';
 import 'package:iptv_app/models/channel_model.dart';
 import 'package:iptv_app/screens/player_screen.dart';
+import 'package:iptv_app/services/channel_service.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    // Get unique categories from mock data
-    final categories = mockChannels.map((c) => c.category).toSet().toList();
+  State<HomeScreen> createState() => _HomeScreenState();
+}
 
+class _HomeScreenState extends State<HomeScreen> {
+  final ChannelService _channelService = ChannelService();
+  late Future<List<Channel>> _channelsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _channelsFuture = _channelService.fetchChannels();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
-      body: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Hero Banner
-            Container(
-              height: 300,
-              width: double.infinity,
-              decoration: const BoxDecoration(
-                image: DecorationImage(
-                  image: NetworkImage(
-                    'https://images.unsplash.com/photo-1536440136628-849c177e76a1?q=80&w=2000&auto=format&fit=crop',
-                  ),
-                  fit: BoxFit.cover,
-                ),
+      body: FutureBuilder<List<Channel>>(
+        future: _channelsFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 20),
+                  Text('Loading Channels...'),
+                ],
               ),
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                    colors: [
-                      Colors.black.withOpacity(0.8),
-                      Colors.transparent,
-                    ],
+            );
+          } else if (snapshot.hasError) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error_outline, color: Colors.red, size: 60),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Failed to load channels.\nCheck your WiFi.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.white.withOpacity(0.7)),
                   ),
-                ),
-                padding: const EdgeInsets.all(20),
-                child: const Column(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Featured Content',
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                  const SizedBox(height: 20),
+                  ElevatedButton(
+                    onPressed: () {
+                      setState(() {
+                        _channelsFuture = _channelService.fetchChannels();
+                      });
+                    },
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            );
+          } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return const Center(child: Text('No channels found.'));
+          }
+
+          final channels = snapshot.data!;
+          final categories = channels.map((c) => c.category).toSet().toList();
+
+          return SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Hero Banner
+                Container(
+                  height: 300,
+                  width: double.infinity,
+                  decoration: const BoxDecoration(
+                    image: DecorationImage(
+                      image: NetworkImage(
+                        'https://images.unsplash.com/photo-1536440136628-849c177e76a1?q=80&w=2000&auto=format&fit=crop',
+                      ),
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.bottomCenter,
+                        end: Alignment.topCenter,
+                        colors: [
+                          Colors.black.withOpacity(0.8),
+                          Colors.transparent,
+                        ],
                       ),
                     ),
-                    Text(
-                      'Watch the latest live streams now',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.white70,
-                      ),
+                    padding: const EdgeInsets.all(20),
+                    child: const Column(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Featured Content',
+                          style: TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        Text(
+                          'Watch the latest live streams now',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.white70,
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
-              ),
+                const SizedBox(height: 20),
+
+                // Dynamically build categories from real M3U data
+                ...categories
+                    .map((category) => _buildCategoryRow(category, channels))
+                    .toList(),
+                const SizedBox(height: 20),
+              ],
             ),
-            const SizedBox(height: 20),
-            
-            // Dynamically build categories from mock data
-            ...categories.map((category) => _buildCategoryRow(category)).toList(),
-            const SizedBox(height: 20),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
 
-  Widget _buildCategoryRow(String categoryName) {
-    // Filter channels for this specific category
-    final categoryChannels = mockChannels
+  Widget _buildCategoryRow(String categoryName, List<Channel> allChannels) {
+    final categoryChannels = allChannels
         .where((channel) => channel.category == categoryName)
         .toList();
 

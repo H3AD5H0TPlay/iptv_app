@@ -4,10 +4,10 @@ final List<Channel> mockChannels = [
   // News Category
   Channel(
     id: 'news_01',
-    name: 'Global News 24',
+    name: 'Test Stream (Tears of Steel)',
     category: 'News',
     logoUrl: 'https://picsum.photos/seed/news1/200/200',
-    streamUrl: 'https://example.com/streams/news1.m3u8',
+    streamUrl: 'https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8',
   ),
   Channel(
     id: 'news_02',
