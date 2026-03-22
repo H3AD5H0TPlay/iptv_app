@@ -25,7 +25,6 @@ class ChannelService {
       
       for (var response in responses) {
         if (response.statusCode == 200) {
-          // FIX: Use utf8.decode on bodyBytes to handle Japanese/Korean characters correctly
           final String decodedBody = utf8.decode(response.bodyBytes, allowMalformed: true);
           
           final List<Channel> parsed = await compute(
@@ -46,6 +45,23 @@ class ChannelService {
     }
   }
 
+  // New: Lightweight check to see if a stream is reachable
+  Future<bool> isStreamReachable(String url) async {
+    try {
+      final response = await http.head(
+        Uri.parse(url),
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+        },
+      ).timeout(const Duration(seconds: 3));
+      
+      // 200 (OK), 302 (Redirect), 206 (Partial) are usually healthy
+      return response.statusCode >= 200 && response.statusCode < 400;
+    } catch (_) {
+      return false;
+    }
+  }
+
   static List<Channel> _parseM3uIsolate(_ParseParams params) {
     final List<Channel> channels = [];
     final List<String> lines = const LineSplitter().convert(params.body);
@@ -62,24 +78,19 @@ class ChannelService {
       } else if (line.startsWith('#EXTGRP:')) {
         currentCategory = line.substring(8).trim();
       } else if (line.startsWith('http') && lastInfLine != null) {
-        // We found a URL and we have a preceding INF line
         final String streamUrl = line;
         
-        // Extract Logo
         final logoMatch = RegExp(r'tvg-logo="([^"]*)"', caseSensitive: false).firstMatch(lastInfLine);
         String logoUrl = logoMatch?.group(1) ?? '';
         
-        // Defensive check: Native Android decoder fails on SVG or empty/malformed URLs
         if (logoUrl.toLowerCase().endsWith('.svg') || !logoUrl.startsWith('http')) {
           logoUrl = '';
         }
 
-        // Extract Category
         final groupMatch = RegExp(r'group-title="([^"]*)"', caseSensitive: false).firstMatch(lastInfLine);
         String category = groupMatch?.group(1) ?? currentCategory ?? 'General';
         if (category.isEmpty) category = 'General';
 
-        // Extract Name
         final String name = lastInfLine.split(',').last.trim();
 
         channels.add(Channel(
@@ -90,9 +101,7 @@ class ChannelService {
           streamUrl: streamUrl,
         ));
 
-        // Reset for next entry
         lastInfLine = null;
-        // Note: currentCategory stays until updated by another #EXTGRP
       }
     }
     return channels;

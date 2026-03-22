@@ -20,6 +20,9 @@ class _HomeScreenState extends State<HomeScreen> {
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
 
+  // Dynamic set of channels that have failed during this session
+  final Set<String> _unavailableChannelNames = {};
+
   @override
   void initState() {
     super.initState();
@@ -45,6 +48,15 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _toggleFavorite(String name) async {
     await _favoritesService.toggleFavorite(name);
     await _loadFavorites();
+  }
+
+  // Callback to mark a channel as unavailable when it fails in the player
+  void _markAsUnavailable(String name) {
+    if (!_unavailableChannelNames.contains(name)) {
+      setState(() {
+        _unavailableChannelNames.add(name);
+      });
+    }
   }
 
   @override
@@ -137,7 +149,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
           final allChannels = snapshot.data!;
 
-          // Filter and group channels efficiently
+          // Filter based on search
           final filteredChannels = _searchQuery.isEmpty
               ? allChannels
               : allChannels.where((c) =>
@@ -148,14 +160,26 @@ class _HomeScreenState extends State<HomeScreen> {
             return const Center(child: Text('No channels match your search.'));
           }
 
-          // Pre-group channels by category to avoid repeated filtering in the list
-          final Map<String, List<Channel>> grouped = {};
+          // Split channels into "Working" and "Unavailable"
+          final List<Channel> workingChannels = [];
+          final List<Channel> unavailableChannels = [];
+
           for (var channel in filteredChannels) {
+            if (_unavailableChannelNames.contains(channel.name)) {
+              unavailableChannels.add(channel);
+            } else {
+              workingChannels.add(channel);
+            }
+          }
+
+          // Group working channels
+          final Map<String, List<Channel>> grouped = {};
+          for (var channel in workingChannels) {
             grouped.putIfAbsent(channel.category, () => []).add(channel);
           }
           final sortedCategories = grouped.keys.toList()..sort();
 
-          final favoriteChannels = filteredChannels
+          final favoriteChannels = workingChannels
               .where((c) => _favoriteNames.contains(c.name))
               .toList();
 
@@ -163,13 +187,16 @@ class _HomeScreenState extends State<HomeScreen> {
             onRefresh: () async {
               setState(() {
                 _channelsFuture = _channelService.fetchChannels();
+                _unavailableChannelNames.clear(); // Clear failures on manual refresh
               });
               await _loadFavorites();
             },
             child: ListView.builder(
               padding: const EdgeInsets.only(bottom: 20),
-              // +1 for Banner, +1 if favorites exist
-              itemCount: sortedCategories.length + (_searchQuery.isEmpty ? 1 : 0) + (favoriteChannels.isNotEmpty ? 1 : 0),
+              itemCount: sortedCategories.length + 
+                        (_searchQuery.isEmpty ? 1 : 0) + 
+                        (favoriteChannels.isNotEmpty ? 1 : 0) + 
+                        (unavailableChannels.isNotEmpty ? 1 : 0),
               itemBuilder: (context, index) {
                 int adjustedIndex = index;
 
@@ -185,9 +212,19 @@ class _HomeScreenState extends State<HomeScreen> {
                   adjustedIndex--;
                 }
 
-                // 3. Category Rows
-                final category = sortedCategories[adjustedIndex];
-                return _buildCategoryRow(category, grouped[category]!);
+                // 3. Normal Categories
+                if (adjustedIndex < sortedCategories.length) {
+                  final category = sortedCategories[adjustedIndex];
+                  return _buildCategoryRow(category, grouped[category]!);
+                }
+                adjustedIndex -= sortedCategories.length;
+
+                // 4. Currently Unavailable Section
+                if (unavailableChannels.isNotEmpty && adjustedIndex == 0) {
+                  return _buildCategoryRow('Currently Unavailable', unavailableChannels, isUnavailable: true);
+                }
+
+                return const SizedBox.shrink();
               },
             ),
           );
@@ -196,7 +233,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildCategoryRow(String categoryName, List<Channel> channels) {
+  Widget _buildCategoryRow(String categoryName, List<Channel> channels, {bool isUnavailable = false}) {
     return Column(
       key: PageStorageKey(categoryName),
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -205,10 +242,10 @@ class _HomeScreenState extends State<HomeScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
           child: Text(
             categoryName,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
-              color: Colors.white,
+              color: isUnavailable ? Colors.white38 : Colors.white,
             ),
           ),
         ),
@@ -227,66 +264,73 @@ class _HomeScreenState extends State<HomeScreen> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => PlayerScreen(channel: channel),
+                      builder: (context) => PlayerScreen(
+                        channel: channel,
+                        onError: () => _markAsUnavailable(channel.name),
+                      ),
                     ),
                   );
                 },
-                child: Container(
-                  width: 120,
-                  margin: const EdgeInsets.symmetric(horizontal: 4.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Stack(
-                          children: [
-                            Container(
-                              decoration: BoxDecoration(
-                                color: Colors.grey[900],
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: Image.network(
-                                  channel.logoUrl,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) =>
-                                      const Center(child: Icon(Icons.tv, color: Colors.white54, size: 40)),
+                child: Opacity(
+                  opacity: isUnavailable ? 0.5 : 1.0,
+                  child: Container(
+                    width: 120,
+                    margin: const EdgeInsets.symmetric(horizontal: 4.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Stack(
+                            children: [
+                              Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[900],
+                                  borderRadius: BorderRadius.circular(8),
                                 ),
-                              ),
-                            ),
-                            Positioned(
-                              top: 4,
-                              right: 4,
-                              child: GestureDetector(
-                                onTap: () => _toggleFavorite(channel.name),
-                                child: Container(
-                                  padding: const EdgeInsets.all(4),
-                                  decoration: BoxDecoration(
-                                    color: Colors.black.withOpacity(0.5),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Icon(
-                                    isFav ? Icons.favorite : Icons.favorite_border,
-                                    color: isFav ? Colors.red : Colors.white,
-                                    size: 18,
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Image.network(
+                                    channel.logoUrl,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) =>
+                                        const Center(child: Icon(Icons.tv, color: Colors.white54, size: 40)),
                                   ),
                                 ),
                               ),
-                            ),
-                          ],
+                              if (!isUnavailable)
+                                Positioned(
+                                  top: 4,
+                                  right: 4,
+                                  child: GestureDetector(
+                                    onTap: () => _toggleFavorite(channel.name),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(4),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withOpacity(0.5),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Icon(
+                                        isFav ? Icons.favorite : Icons.favorite_border,
+                                        color: isFav ? Colors.red : Colors.white,
+                                        size: 18,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
                         ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8.0, left: 4.0),
-                        child: Text(
-                          channel.name,
-                          style: const TextStyle(color: Colors.white, fontSize: 14),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8.0, left: 4.0),
+                          child: Text(
+                            channel.name,
+                            style: const TextStyle(color: Colors.white, fontSize: 14),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               );
