@@ -17,12 +17,20 @@ class _HomeScreenState extends State<HomeScreen> {
   
   late Future<List<Channel>> _channelsFuture;
   List<String> _favoriteNames = [];
+  String _searchQuery = '';
+  final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _channelsFuture = _channelService.fetchChannels();
     _loadFavorites();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadFavorites() async {
@@ -42,6 +50,51 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        title: _searchQuery == '' && _searchController.text == '' 
+          ? const Text('StreamEast') 
+          : null,
+        backgroundColor: Colors.black,
+        centerTitle: true,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(60),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            child: TextField(
+              controller: _searchController,
+              onChanged: (value) {
+                setState(() {
+                  _searchQuery = value.toLowerCase();
+                });
+              },
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                hintText: 'Search channels...',
+                hintStyle: const TextStyle(color: Colors.white54),
+                prefixIcon: const Icon(Icons.search, color: Colors.white54),
+                suffixIcon: _searchController.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, color: Colors.white54),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() {
+                            _searchQuery = '';
+                          });
+                        },
+                      )
+                    : null,
+                filled: true,
+                fillColor: Colors.grey[900],
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(vertical: 0),
+              ),
+            ),
+          ),
+        ),
+      ),
       body: FutureBuilder<List<Channel>>(
         future: _channelsFuture,
         builder: (context, snapshot) {
@@ -85,9 +138,22 @@ class _HomeScreenState extends State<HomeScreen> {
           }
 
           final allChannels = snapshot.data!;
-          final categories = allChannels.map((c) => c.category).toSet().toList();
           
-          final favoriteChannels = allChannels
+          // Filter channels based on search query
+          final filteredChannels = allChannels.where((c) {
+            return c.name.toLowerCase().contains(_searchQuery) ||
+                   c.category.toLowerCase().contains(_searchQuery);
+          }).toList();
+
+          if (filteredChannels.isEmpty) {
+            return const Center(
+              child: Text('No channels match your search.'),
+            );
+          }
+
+          final categories = filteredChannels.map((c) => c.category).toSet().toList();
+          
+          final favoriteChannels = filteredChannels
               .where((c) => _favoriteNames.contains(c.name))
               .toList();
 
@@ -102,53 +168,54 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Hero Banner
-                  Container(
-                    height: 300,
-                    width: double.infinity,
-                    decoration: const BoxDecoration(
-                      image: DecorationImage(
-                        image: NetworkImage(
-                          'https://images.unsplash.com/photo-1536440136628-849c177e76a1?q=80&w=2000&auto=format&fit=crop',
+                  // Show Hero Banner only when not searching
+                  if (_searchQuery.isEmpty)
+                    Container(
+                      height: 300,
+                      width: double.infinity,
+                      decoration: const BoxDecoration(
+                        image: DecorationImage(
+                          image: NetworkImage(
+                            'https://images.unsplash.com/photo-1536440136628-849c177e76a1?q=80&w=2000&auto=format&fit=crop',
+                          ),
+                          fit: BoxFit.cover,
                         ),
-                        fit: BoxFit.cover,
                       ),
-                    ),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.bottomCenter,
-                          end: Alignment.topCenter,
-                          colors: [
-                            Colors.black.withOpacity(0.8),
-                            Colors.transparent,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.bottomCenter,
+                            end: Alignment.topCenter,
+                            colors: [
+                              Colors.black.withOpacity(0.8),
+                              Colors.transparent,
+                            ],
+                          ),
+                        ),
+                        padding: const EdgeInsets.all(20),
+                        child: const Column(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Featured Content',
+                              style: TextStyle(
+                                fontSize: 28,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                            Text(
+                              'Watch the latest live streams now',
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.white70,
+                              ),
+                            ),
                           ],
                         ),
                       ),
-                      padding: const EdgeInsets.all(20),
-                      child: const Column(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Featured Content',
-                            style: TextStyle(
-                              fontSize: 28,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                          Text(
-                            'Watch the latest live streams now',
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: Colors.white70,
-                            ),
-                          ),
-                        ],
-                      ),
                     ),
-                  ),
                   
                   if (favoriteChannels.isNotEmpty)
                     _buildCategoryRow('Your Favorites', favoriteChannels),
@@ -156,7 +223,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ...categories
                       .map((category) => _buildCategoryRow(
                           category, 
-                          allChannels.where((c) => c.category == category).toList()
+                          filteredChannels.where((c) => c.category == category).toList()
                         ))
                       .toList(),
                   const SizedBox(height: 20),
