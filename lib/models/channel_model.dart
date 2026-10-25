@@ -4,6 +4,9 @@ class Channel {
   final String category;
   final String logoUrl;
   final String streamUrl;
+  final String country;
+  final String? referrer;
+  final String? userAgent;
 
   Channel({
     required this.id,
@@ -11,6 +14,9 @@ class Channel {
     required this.category,
     required this.logoUrl,
     required this.streamUrl,
+    this.country = 'Unknown',
+    this.referrer,
+    this.userAgent,
   });
 
   // Added a factory constructor for future JSON parsing from the internet
@@ -21,6 +27,9 @@ class Channel {
       category: json['category'] as String,
       logoUrl: json['logoUrl'] as String,
       streamUrl: json['streamUrl'] as String,
+      country: (json['country'] as String?) ?? 'Unknown',
+      referrer: json['referrer'] as String?,
+      userAgent: json['userAgent'] as String?,
     );
   }
 }

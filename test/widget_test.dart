@@ -1,30 +1,31 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:iptv_app/main.dart';
+import 'package:iptv_app/models/channel_model.dart';
+import 'package:iptv_app/services/channel_service.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  test('M3U parser extracts channel metadata, country, and VLC options', () {
+    const sampleM3u = '''
+#EXTM3U
+#EXTINF:-1 tvg-id="NHK.jp" tvg-logo="https://example.com/logo.png" group-title="Culture;News",NHK World
+#EXTVLCOPT:http-referrer=https://nhk.jp/
+#EXTVLCOPT:http-user-agent=CustomAgent/1.0
+https://example.com/live/nhk.m3u8
+''';
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    final channels = ChannelService.parseM3uString(
+      sampleM3u,
+      startId: 0,
+      country: 'Japan',
+    );
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
-
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(channels.length, 1);
+    final Channel ch = channels.first;
+    expect(ch.name, 'NHK World');
+    expect(ch.category, 'Culture');
+    expect(ch.country, 'Japan');
+    expect(ch.logoUrl, 'https://example.com/logo.png');
+    expect(ch.streamUrl, 'https://example.com/live/nhk.m3u8');
+    expect(ch.referrer, 'https://nhk.jp/');
+    expect(ch.userAgent, 'CustomAgent/1.0');
   });
 }

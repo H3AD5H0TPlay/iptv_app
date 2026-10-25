@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:media_kit/media_kit.dart';
@@ -5,6 +6,16 @@ import 'package:iptv_app/screens/home_screen.dart';
 
 // Global key to allow showing dialogs without a local BuildContext
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
+class DesktopScrollBehavior extends MaterialScrollBehavior {
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+        PointerDeviceKind.touch,
+        PointerDeviceKind.mouse,
+        PointerDeviceKind.trackpad,
+        PointerDeviceKind.stylus,
+      };
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -66,6 +77,7 @@ class MyApp extends StatelessWidget {
       navigatorKey: navigatorKey, // Required for the global error dialogs
       title: 'StreamEast',
       debugShowCheckedModeBanner: false,
+      scrollBehavior: DesktopScrollBehavior(),
       theme: ThemeData(
         brightness: Brightness.dark,
         scaffoldBackgroundColor: const Color(0xFF121212),

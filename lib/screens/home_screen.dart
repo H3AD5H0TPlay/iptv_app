@@ -18,10 +18,18 @@ class _HomeScreenState extends State<HomeScreen> {
   late Future<List<Channel>> _channelsFuture;
   List<String> _favoriteNames = [];
   String _searchQuery = '';
+  String _selectedCountry = 'All';
   final TextEditingController _searchController = TextEditingController();
 
-  // Dynamic set of channels that have failed during this session
-  final Set<String> _unavailableChannelNames = {};
+  static const List<Map<String, String>> _countries = [
+    {'id': 'All', 'label': '🌏 All Asia'},
+    {'id': 'Japan', 'label': '🇯🇵 Japan'},
+    {'id': 'South Korea', 'label': '🇰🇷 South Korea'},
+    {'id': 'China', 'label': '🇨🇳 China'},
+  ];
+
+  // Dynamic set of stream URLs that have failed during this session
+  final Set<String> _unavailableStreamUrls = {};
 
   @override
   void initState() {
@@ -50,12 +58,25 @@ class _HomeScreenState extends State<HomeScreen> {
     await _loadFavorites();
   }
 
-  // Callback to mark a channel as unavailable when it fails in the player
-  void _markAsUnavailable(String name) {
-    if (!_unavailableChannelNames.contains(name)) {
+  // Callback to mark a specific stream URL as unavailable when it fails in the player
+  void _markAsUnavailable(String streamUrl) {
+    if (!_unavailableStreamUrls.contains(streamUrl)) {
       setState(() {
-        _unavailableChannelNames.add(name);
+        _unavailableStreamUrls.add(streamUrl);
       });
+    }
+  }
+
+  String _countryBadge(String country) {
+    switch (country) {
+      case 'Japan':
+        return 'JP';
+      case 'South Korea':
+        return 'KR';
+      case 'China':
+        return 'CN';
+      default:
+        return '';
     }
   }
 
@@ -63,45 +84,95 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: _searchQuery.isEmpty ? const Text('StreamEast') : null,
+        title: const Text(
+          'StreamEast',
+          style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.1),
+        ),
         backgroundColor: Colors.black,
         centerTitle: true,
+        actions: [
+          IconButton(
+            tooltip: 'Refresh Channels',
+            icon: const Icon(Icons.refresh, color: Colors.white70),
+            onPressed: () {
+              setState(() {
+                _channelsFuture = _channelService.fetchChannels();
+                _unavailableStreamUrls.clear();
+              });
+              _loadFavorites();
+            },
+          ),
+        ],
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(60),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-            child: TextField(
-              controller: _searchController,
-              onChanged: (value) {
-                setState(() {
-                  _searchQuery = value.toLowerCase();
-                });
-              },
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                hintText: 'Search channels...',
-                hintStyle: const TextStyle(color: Colors.white54),
-                prefixIcon: const Icon(Icons.search, color: Colors.white54),
-                suffixIcon: _searchController.text.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear, color: Colors.white54),
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() {
-                            _searchQuery = '';
-                          });
-                        },
-                      )
-                    : null,
-                filled: true,
-                fillColor: Colors.grey[900],
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide.none,
+          preferredSize: const Size.fromHeight(110),
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 6.0),
+                child: TextField(
+                  controller: _searchController,
+                  onChanged: (value) {
+                    setState(() {
+                      _searchQuery = value.toLowerCase();
+                    });
+                  },
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    hintText: 'Search channels, categories, or countries...',
+                    hintStyle: const TextStyle(color: Colors.white54),
+                    prefixIcon: const Icon(Icons.search, color: Colors.white54),
+                    suffixIcon: _searchController.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, color: Colors.white54),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() {
+                                _searchQuery = '';
+                              });
+                            },
+                          )
+                        : null,
+                    filled: true,
+                    fillColor: Colors.grey[900],
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                  ),
                 ),
-                contentPadding: const EdgeInsets.symmetric(vertical: 0),
               ),
-            ),
+              SizedBox(
+                height: 44,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+                  itemCount: _countries.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (context, index) {
+                    final item = _countries[index];
+                    final id = item['id']!;
+                    final label = item['label']!;
+                    final isSelected = _selectedCountry == id;
+                    return ChoiceChip(
+                      label: Text(label),
+                      selected: isSelected,
+                      onSelected: (_) {
+                        setState(() {
+                          _selectedCountry = id;
+                        });
+                      },
+                      selectedColor: Colors.deepPurpleAccent,
+                      backgroundColor: Colors.grey[900],
+                      labelStyle: TextStyle(
+                        color: isSelected ? Colors.white : Colors.white70,
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -115,7 +186,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   CircularProgressIndicator(),
                   SizedBox(height: 20),
-                  Text('Loading Channels...'),
+                  Text('Loading Asian TV Channels (JP / KR / CN)...'),
                 ],
               ),
             );
@@ -127,7 +198,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   const Icon(Icons.error_outline, color: Colors.red, size: 60),
                   const SizedBox(height: 20),
                   const Text(
-                    'Failed to load channels.\nCheck your WiFi.',
+                    'Failed to load channels.\nCheck your network connection.',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: Colors.white),
                   ),
@@ -149,15 +220,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
           final allChannels = snapshot.data!;
 
-          // Filter based on search
-          final filteredChannels = _searchQuery.isEmpty
-              ? allChannels
-              : allChannels.where((c) =>
-                  c.name.toLowerCase().contains(_searchQuery) ||
-                  c.category.toLowerCase().contains(_searchQuery)).toList();
+          // Filter based on country and search query
+          final filteredChannels = allChannels.where((c) {
+            final matchesCountry = _selectedCountry == 'All' || c.country == _selectedCountry;
+            if (!matchesCountry) return false;
+            if (_searchQuery.isEmpty) return true;
+            return c.name.toLowerCase().contains(_searchQuery) ||
+                c.category.toLowerCase().contains(_searchQuery) ||
+                c.country.toLowerCase().contains(_searchQuery);
+          }).toList();
 
           if (filteredChannels.isEmpty) {
-            return const Center(child: Text('No channels match your search.'));
+            return const Center(child: Text('No channels match your filter.'));
           }
 
           // Split channels into "Working" and "Unavailable"
@@ -165,7 +239,7 @@ class _HomeScreenState extends State<HomeScreen> {
           final List<Channel> unavailableChannels = [];
 
           for (var channel in filteredChannels) {
-            if (_unavailableChannelNames.contains(channel.name)) {
+            if (_unavailableStreamUrls.contains(channel.streamUrl)) {
               unavailableChannels.add(channel);
             } else {
               workingChannels.add(channel);
@@ -187,28 +261,35 @@ class _HomeScreenState extends State<HomeScreen> {
             onRefresh: () async {
               setState(() {
                 _channelsFuture = _channelService.fetchChannels();
-                _unavailableChannelNames.clear(); // Clear failures on manual refresh
+                _unavailableStreamUrls.clear(); // Clear failures on manual refresh
               });
               await _loadFavorites();
             },
             child: ListView.builder(
               padding: const EdgeInsets.only(bottom: 20),
-              itemCount: sortedCategories.length + 
-                        (_searchQuery.isEmpty ? 1 : 0) + 
-                        (favoriteChannels.isNotEmpty ? 1 : 0) + 
-                        (unavailableChannels.isNotEmpty ? 1 : 0),
+              itemCount: sortedCategories.length +
+                  (_searchQuery.isEmpty ? 1 : 0) +
+                  (favoriteChannels.isNotEmpty ? 1 : 0) +
+                  (unavailableChannels.isNotEmpty ? 1 : 0),
               itemBuilder: (context, index) {
                 int adjustedIndex = index;
 
                 // 1. Hero Banner
                 if (_searchQuery.isEmpty) {
-                  if (adjustedIndex == 0) return const _HeroBanner();
+                  if (adjustedIndex == 0) {
+                    return _HeroBanner(
+                      totalCount: workingChannels.length,
+                      selectedCountry: _selectedCountry,
+                    );
+                  }
                   adjustedIndex--;
                 }
 
                 // 2. Favorites
                 if (favoriteChannels.isNotEmpty) {
-                  if (adjustedIndex == 0) return _buildCategoryRow('Your Favorites', favoriteChannels);
+                  if (adjustedIndex == 0) {
+                    return _buildCategoryRow('Your Favorites', favoriteChannels);
+                  }
                   adjustedIndex--;
                 }
 
@@ -221,7 +302,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
                 // 4. Currently Unavailable Section
                 if (unavailableChannels.isNotEmpty && adjustedIndex == 0) {
-                  return _buildCategoryRow('Currently Unavailable', unavailableChannels, isUnavailable: true);
+                  return _buildCategoryRow(
+                    'Currently Unavailable',
+                    unavailableChannels,
+                    isUnavailable: true,
+                  );
                 }
 
                 return const SizedBox.shrink();
@@ -235,22 +320,31 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildCategoryRow(String categoryName, List<Channel> channels, {bool isUnavailable = false}) {
     return Column(
-      key: PageStorageKey(categoryName),
+      key: PageStorageKey('${_selectedCountry}_$categoryName'),
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-          child: Text(
-            categoryName,
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: isUnavailable ? Colors.white38 : Colors.white,
-            ),
+          child: Row(
+            children: [
+              Text(
+                categoryName,
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: isUnavailable ? Colors.white38 : Colors.white,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '(${channels.length})',
+                style: const TextStyle(fontSize: 14, color: Colors.white54),
+              ),
+            ],
           ),
         ),
         SizedBox(
-          height: 180,
+          height: 190,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 12.0),
@@ -258,15 +352,17 @@ class _HomeScreenState extends State<HomeScreen> {
             itemBuilder: (context, index) {
               final channel = channels[index];
               final isFav = _favoriteNames.contains(channel.name);
+              final badge = _countryBadge(channel.country);
 
               return InkWell(
+                borderRadius: BorderRadius.circular(8),
                 onTap: () {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
                       builder: (context) => PlayerScreen(
                         channel: channel,
-                        onError: () => _markAsUnavailable(channel.name),
+                        onError: () => _markAsUnavailable(channel.streamUrl),
                       ),
                     ),
                   );
@@ -274,13 +370,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Opacity(
                   opacity: isUnavailable ? 0.5 : 1.0,
                   child: Container(
-                    width: 120,
+                    width: 140,
                     margin: const EdgeInsets.symmetric(horizontal: 4.0),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Expanded(
                           child: Stack(
+                            fit: StackFit.expand,
                             children: [
                               Container(
                                 decoration: BoxDecoration(
@@ -289,14 +386,39 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ),
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(8),
-                                  child: Image.network(
-                                    channel.logoUrl,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (context, error, stackTrace) =>
-                                        const Center(child: Icon(Icons.tv, color: Colors.white54, size: 40)),
-                                  ),
+                                  child: channel.logoUrl.isNotEmpty
+                                      ? Padding(
+                                          padding: const EdgeInsets.all(8.0),
+                                          child: Image.network(
+                                            channel.logoUrl,
+                                            fit: BoxFit.contain,
+                                            errorBuilder: (context, error, stackTrace) =>
+                                                const Center(child: Icon(Icons.tv, color: Colors.white54, size: 40)),
+                                          ),
+                                        )
+                                      : const Center(child: Icon(Icons.tv, color: Colors.white54, size: 40)),
                                 ),
                               ),
+                              if (badge.isNotEmpty)
+                                Positioned(
+                                  top: 6,
+                                  left: 6,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withValues(alpha: 0.7),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      badge,
+                                      style: const TextStyle(
+                                        color: Colors.white70,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
                               if (!isUnavailable)
                                 Positioned(
                                   top: 4,
@@ -306,7 +428,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                     child: Container(
                                       padding: const EdgeInsets.all(4),
                                       decoration: BoxDecoration(
-                                        color: Colors.black.withOpacity(0.5),
+                                        color: Colors.black.withValues(alpha: 0.6),
                                         shape: BoxShape.circle,
                                       ),
                                       child: Icon(
@@ -321,10 +443,10 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
                         Padding(
-                          padding: const EdgeInsets.only(top: 8.0, left: 4.0),
+                          padding: const EdgeInsets.only(top: 8.0, left: 4.0, right: 4.0),
                           child: Text(
                             channel.name,
-                            style: const TextStyle(color: Colors.white, fontSize: 14),
+                            style: const TextStyle(color: Colors.white, fontSize: 13),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -344,11 +466,22 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 class _HeroBanner extends StatelessWidget {
-  const _HeroBanner();
+  final int totalCount;
+  final String selectedCountry;
+
+  const _HeroBanner({
+    required this.totalCount,
+    required this.selectedCountry,
+  });
+
   @override
   Widget build(BuildContext context) {
+    final regionTitle = selectedCountry == 'All'
+        ? 'Asian Live TV (JP • KR • CN)'
+        : '$selectedCountry Live TV';
+
     return Container(
-      height: 300,
+      height: 220,
       margin: const EdgeInsets.only(bottom: 10),
       decoration: const BoxDecoration(
         image: DecorationImage(
@@ -361,16 +494,23 @@ class _HeroBanner extends StatelessWidget {
           gradient: LinearGradient(
             begin: Alignment.bottomCenter,
             end: Alignment.topCenter,
-            colors: [Colors.black.withOpacity(0.8), Colors.transparent],
+            colors: [Colors.black.withValues(alpha: 0.85), Colors.transparent],
           ),
         ),
         padding: const EdgeInsets.all(20),
-        child: const Column(
+        child: Column(
           mainAxisAlignment: MainAxisAlignment.end,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Featured Content', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white)),
-            Text('Watch the latest live streams now', style: TextStyle(fontSize: 16, color: Colors.white70)),
+            Text(
+              regionTitle,
+              style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.white),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '$totalCount channels available to stream live',
+              style: const TextStyle(fontSize: 15, color: Colors.white70),
+            ),
           ],
         ),
       ),
