@@ -70,6 +70,19 @@ class ChannelService {
       throw Exception('Failed to load any M3U playlists. Check your network connection.');
     }
 
+    // Sort so non-geoblocked channels with logos appear first inside each category
+    allChannels.sort((a, b) {
+      if (a.isGeoBlocked != b.isGeoBlocked) {
+        return a.isGeoBlocked ? 1 : -1;
+      }
+      final aHasLogo = a.logoUrl.isNotEmpty;
+      final bHasLogo = b.logoUrl.isNotEmpty;
+      if (aHasLogo != bHasLogo) {
+        return aHasLogo ? -1 : 1;
+      }
+      return a.name.compareTo(b.name);
+    });
+
     return allChannels;
   }
 
@@ -86,6 +99,9 @@ class ChannelService {
     String? currentCategory;
     String? vlcReferrer;
     String? vlcUserAgent;
+
+    final qualityRegex = RegExp(r'\((\d{3,4}p|4K|UHD|HD|SD)\)', caseSensitive: false);
+    final bracketNoiseRegex = RegExp(r'\[[^\]]*\]');
 
     for (var line in lines) {
       line = line.trim();
@@ -119,7 +135,6 @@ class ChannelService {
         if (rawCategory.isEmpty || rawCategory.toLowerCase() == 'undefined') {
           rawCategory = 'General';
         }
-        // If multiple categories separated by ';', take the primary one
         final String category = rawCategory.split(';').first.trim();
 
         final refMatch = RegExp(r'http-referrer="([^"]*)"', caseSensitive: false).firstMatch(lastInfLine);
@@ -128,15 +143,33 @@ class ChannelService {
         final uaMatch = RegExp(r'http-user-agent="([^"]*)"', caseSensitive: false).firstMatch(lastInfLine);
         final String? userAgent = vlcUserAgent ?? uaMatch?.group(1);
 
-        final String name = lastInfLine.split(',').last.trim();
+        final String rawName = lastInfLine.split(',').last.trim();
+        final bool isGeoBlocked = rawName.toLowerCase().contains('geo-blocked');
+
+        final qualityMatch = qualityRegex.firstMatch(rawName);
+        String? quality = qualityMatch?.group(1)?.toUpperCase();
+        if (quality == null && rawName.contains(' HD')) {
+          quality = 'HD';
+        }
+
+        String cleanName = rawName
+            .replaceAll(qualityRegex, '')
+            .replaceAll(bracketNoiseRegex, '')
+            .replaceAll(RegExp(r'\s+'), ' ')
+            .trim();
+        if (cleanName.isEmpty) {
+          cleanName = rawName;
+        }
 
         channels.add(Channel(
           id: 'id_${params.startId + channels.length}',
-          name: name,
+          name: cleanName,
           category: category,
           logoUrl: logoUrl,
           streamUrl: streamUrl,
           country: params.country,
+          quality: quality,
+          isGeoBlocked: isGeoBlocked,
           referrer: referrer,
           userAgent: userAgent,
         ));

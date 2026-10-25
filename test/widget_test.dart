@@ -3,10 +3,10 @@ import 'package:iptv_app/models/channel_model.dart';
 import 'package:iptv_app/services/channel_service.dart';
 
 void main() {
-  test('M3U parser extracts channel metadata, country, and VLC options', () {
+  test('M3U parser extracts channel metadata, quality badge, country, and VLC options', () {
     const sampleM3u = '''
 #EXTM3U
-#EXTINF:-1 tvg-id="NHK.jp" tvg-logo="https://example.com/logo.png" group-title="Culture;News",NHK World
+#EXTINF:-1 tvg-id="NHK.jp" tvg-logo="https://example.com/logo.png" group-title="Culture;News",NHK World (1080p) [Not 24/7]
 #EXTVLCOPT:http-referrer=https://nhk.jp/
 #EXTVLCOPT:http-user-agent=CustomAgent/1.0
 https://example.com/live/nhk.m3u8
@@ -21,6 +21,7 @@ https://example.com/live/nhk.m3u8
     expect(channels.length, 1);
     final Channel ch = channels.first;
     expect(ch.name, 'NHK World');
+    expect(ch.quality, '1080P');
     expect(ch.category, 'Culture');
     expect(ch.country, 'Japan');
     expect(ch.logoUrl, 'https://example.com/logo.png');
